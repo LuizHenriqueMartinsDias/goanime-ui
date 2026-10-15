@@ -479,7 +479,7 @@ func streamServer(t *testing.T) *httptest.Server {
 					`{"lang":"en","label":"Broken","src":""}]}`,
 				base, audio, base, base))))
 
-		case strings.HasSuffix(r.URL.Path, "master.m3u8"):
+		case strings.HasSuffix(r.URL.Path, ".m3u8"):
 			_, _ = w.Write([]byte(masterPlaylist))
 
 		default:

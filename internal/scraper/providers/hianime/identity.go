@@ -133,3 +133,12 @@ func originOf(rawURL string) string {
 	}
 	return u.Scheme + "://" + u.Host
 }
+
+// hostOf returns the host of rawURL, or rawURL itself when it does not parse.
+func hostOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	return u.Host
+}

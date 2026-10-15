@@ -71,7 +71,7 @@ func newMutationServer(t *testing.T, m mutationServer) *mutationServer {
 			fmt.Fprintf(w, `<html><script>%s="%s"</script></html>`,
 				s.embedVar, base64.StdEncoding.EncodeToString(raw))
 
-		case strings.HasSuffix(r.URL.Path, "master.m3u8"):
+		case strings.HasSuffix(r.URL.Path, ".m3u8"):
 			_, _ = w.Write([]byte(s.master))
 
 		default:

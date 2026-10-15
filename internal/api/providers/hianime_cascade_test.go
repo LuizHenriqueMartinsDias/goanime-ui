@@ -92,11 +92,12 @@ func newHiAnimeStub(t *testing.T) *hianimeStub {
 			w.Header().Set("Content-Type", "application/json")
 			sub := base64.StdEncoding.EncodeToString([]byte(s.srv.URL + "/embed/sub"))
 			dub := base64.StdEncoding.EncodeToString([]byte(s.srv.URL + "/embed/dub"))
-			// MegaPlay is listed first on purpose: the client must skip the
-			// servers it cannot read rather than taking whatever comes first.
+			// MegaPlay is listed first on purpose: the client must prefer
+			// ZokoAnime rather than taking whatever comes first. MegaPlay is
+			// only the fallback, and this stub does not serve it.
 			fmt.Fprint(w, `{"status":true,"html":"`+
 				`<div class=\"item server-item\" data-type=\"sub\" data-server-name=\"HD-1\" data-hash=\"`+
-				base64.StdEncoding.EncodeToString([]byte("https://megaplay.example/stream/s-2/1/sub"))+`\"></div>`+
+				base64.StdEncoding.EncodeToString([]byte(s.srv.URL+"/stream/s-2/1/sub"))+`\"></div>`+
 				`<div class=\"item server-item\" data-type=\"sub\" data-server-name=\"ZokoAnime\" data-hash=\"`+sub+`\"></div>`+
 				`<div class=\"item server-item\" data-type=\"dub\" data-server-name=\"ZokoAnime\" data-hash=\"`+dub+`\"></div>`+
 				`"}`)
@@ -114,7 +115,7 @@ func newHiAnimeStub(t *testing.T) *hianimeStub {
 				s.srv.URL, audio, s.srv.URL, s.srv.URL)
 			fmt.Fprintf(w, `<html><script>window.__P="%s"</script></html>`, obfuscate(config))
 
-		case strings.HasSuffix(r.URL.Path, "master.m3u8"):
+		case strings.HasSuffix(r.URL.Path, ".m3u8"):
 			fmt.Fprint(w, "#EXTM3U\n"+
 				"#EXT-X-STREAM-INF:BANDWIDTH=1218557,RESOLUTION=1920x1080\nindex-f1.m3u8\n"+
 				"#EXT-X-STREAM-INF:BANDWIDTH=809659,RESOLUTION=1280x720\nindex-f2.m3u8\n")
@@ -186,6 +187,7 @@ func TestHiAnimeCascade_SearchToStream(t *testing.T) {
 		"/api/theme/episode/list/42",
 		"/api/theme/episode/servers",
 		"/embed/sub",
+		"/stream/sub/master.m3u8", // the CDN reachability probe
 	}, stub.paths(), "the cascade must walk exactly these stages, in order")
 }
 

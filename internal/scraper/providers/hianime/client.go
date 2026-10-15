@@ -54,6 +54,7 @@ var (
 // HiAnimeClient handles interactions with hianime.at.
 type HiAnimeClient struct {
 	client     *http.Client
+	stream     *http.Client // MegaPlay segments, read through hlsproxy.go
 	baseURL    string
 	userAgent  string
 	maxRetries int
@@ -65,6 +66,7 @@ type HiAnimeClient struct {
 func NewHiAnimeClient() *HiAnimeClient {
 	return &HiAnimeClient{
 		client:     util.NewFastClient(),
+		stream:     newStreamClient(),
 		baseURL:    hianimeBase,
 		userAgent:  netx.UserAgent,
 		maxRetries: 2,
@@ -77,6 +79,8 @@ func NewHiAnimeClient() *HiAnimeClient {
 func NewClientForTest(serverURL string) *HiAnimeClient {
 	c := NewHiAnimeClient()
 	c.baseURL = strings.TrimSuffix(serverURL, "/")
+	// The SSRF guard of the real stream client refuses the loopback test server.
+	c.stream = &http.Client{}
 	c.maxRetries = 0
 	c.retryDelay = 0
 	return c

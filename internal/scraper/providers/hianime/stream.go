@@ -3,9 +3,13 @@ package hianime
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/alvarorichard/Goanime/internal/scraper/netx"
@@ -13,8 +17,7 @@ import (
 	"github.com/alvarorichard/Goanime/internal/util/jsonx"
 )
 
-// zokoServerName is the only server this scraper reads. doc.go explains why the
-// others are left alone.
+// zokoServerName is the server read first. doc.go explains the order.
 const zokoServerName = "ZokoAnime"
 
 // server is one entry of the episode's server list.
@@ -26,6 +29,11 @@ type server struct {
 
 // GetEpisodeStreamURL resolves an episode URL to a playable HLS URL plus the
 // metadata the player needs.
+//
+// ZokoAnime is tried first; when it is missing, or its CDN does not answer
+// (some ISPs drop the host outright), the MegaPlay servers are tried next.
+// Their stream comes back through the local proxy in hlsproxy.go, so the URL
+// may point at 127.0.0.1.
 //
 // quality may be "best", "" or a label such as "720p"/"1080". When a matching
 // variant exists its playlist is returned; otherwise the master playlist is,
@@ -55,14 +63,36 @@ func (c *HiAnimeClient) GetEpisodeStreamURL(ctx context.Context, episodeURL, qua
 		return "", nil, err
 	}
 
-	chosen, ok := selectServer(servers, preferredAudio())
-	if !ok {
-		return "", nil, netx.NewParserError(sourceLabel, "servers",
-			"episode "+epID+" lists "+strconv.Itoa(len(servers))+" server(s), none of them "+
-				zokoServerName+" (the only one this source can read)", nil)
+	prefer := preferredAudio()
+	var errs []error
+	if chosen, ok := selectServer(servers, prefer); ok {
+		util.Debug("HiAnime server selected", "episode", epID, "server", chosen.Name, "audio", chosen.Audio)
+		streamURL, metadata, err = c.resolveZoko(ctx, chosen, quality)
+		if err == nil {
+			return streamURL, metadata, nil
+		}
+		util.Debug("HiAnime ZokoAnime failed; trying MegaPlay", "episode", epID, "error", err)
+		errs = append(errs, err)
 	}
-	util.Debug("HiAnime server selected", "episode", epID, "server", chosen.Name, "audio", chosen.Audio)
+	for _, chosen := range megaPlayServers(servers, prefer) {
+		util.Debug("HiAnime server selected", "episode", epID, "server", chosen.Name, "audio", chosen.Audio)
+		streamURL, metadata, err = c.resolveMegaPlay(ctx, chosen, quality)
+		if err == nil {
+			return streamURL, metadata, nil
+		}
+		util.Debug("HiAnime MegaPlay server failed", "episode", epID, "server", chosen.Name, "error", err)
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return "", nil, errors.Join(errs...)
+	}
+	return "", nil, netx.NewParserError(sourceLabel, "servers",
+		"episode "+epID+" lists "+strconv.Itoa(len(servers))+" server(s), none of them "+
+			zokoServerName+" or MegaPlay (the ones this source can read)", nil)
+}
 
+// resolveZoko reads a ZokoAnime embed and checks that its CDN answers.
+func (c *HiAnimeClient) resolveZoko(ctx context.Context, chosen server, quality string) (string, map[string]string, error) {
 	embedOrigin := originOf(chosen.Embed)
 	page, err := c.getBody(ctx, chosen.Embed, "embed", func(req *http.Request) {
 		req.Header.Set("Referer", c.baseURL+"/")
@@ -78,12 +108,17 @@ func (c *HiAnimeClient) GetEpisodeStreamURL(ctx context.Context, episodeURL, qua
 	// Variant selection has to send the Referer too: the variant playlist is
 	// precisely the level where the CDN was measured to enforce it.
 	referer := embedOrigin + "/"
-	streamURL = payload.Src
+	streamURL := payload.Src
 	if v, ok := c.selectVariant(ctx, payload.Src, quality, referer); ok {
 		streamURL = v
 	}
+	// mpv given a host that never answers sits on an empty window with no
+	// error, which is how a blocked CDN used to look.
+	if err := c.probePlaylist(ctx, streamURL, referer); err != nil {
+		return "", nil, err
+	}
 
-	metadata = map[string]string{
+	metadata := map[string]string{
 		"source":     "hianime",
 		"referer":    referer,
 		"audio_lang": chosen.Audio,
@@ -92,6 +127,49 @@ func (c *HiAnimeClient) GetEpisodeStreamURL(ctx context.Context, episodeURL, qua
 		metadata["subtitles"] = subs
 	}
 	return streamURL, metadata, nil
+}
+
+// streamProbeTimeout bounds probePlaylist; deadHostTTL is how long a host that
+// failed it is skipped without asking again. Package vars so tests can shorten
+// them.
+var (
+	streamProbeTimeout = 6 * time.Second
+	deadHostTTL        = 10 * time.Minute
+)
+
+// deadHosts maps a CDN host that did not answer to when it was seen failing,
+// so every episode of a session does not wait out the probe again.
+var deadHosts sync.Map // host -> time.Time
+
+// probePlaylist checks that rawURL answers with an HLS playlist.
+func (c *HiAnimeClient) probePlaylist(ctx context.Context, rawURL, referer string) error {
+	host := hostOf(rawURL)
+	if seen, ok := deadHosts.Load(host); ok && time.Since(seen.(time.Time)) < deadHostTTL {
+		return netx.NewParserError(sourceLabel, "playlist", "the stream host "+host+" did not answer recently", nil)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, streamProbeTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
+	if err != nil {
+		return netx.NewParserError(sourceLabel, "playlist", "bad stream URL", err)
+	}
+	c.decorateRequest(req)
+	req.Header.Set("Referer", referer)
+	resp, err := c.client.Do(req) // #nosec G704 -- URL comes from the source's own player
+	if err != nil {
+		deadHosts.Store(host, time.Now())
+		return netx.NewParserError(sourceLabel, "playlist", "the stream host "+host+" did not answer", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return netx.NewHTTPStatusError(sourceLabel, "playlist", resp.StatusCode)
+	}
+	head := make([]byte, len("#EXTM3U"))
+	if _, err := io.ReadFull(resp.Body, head); err != nil || string(head) != "#EXTM3U" {
+		return netx.NewParserError(sourceLabel, "playlist", "the stream URL did not answer with a playlist", err)
+	}
+	return nil
 }
 
 // parseServers reads the server list fragment.

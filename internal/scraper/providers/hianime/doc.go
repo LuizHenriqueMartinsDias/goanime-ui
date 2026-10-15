@@ -18,13 +18,15 @@
 // The two JSON endpoints answer with an HTML fragment inside a JSON envelope,
 // which is why both a decoder and goquery appear in the same call.
 //
-// A server entry carries its embed URL as data-hash, which is plain base64. Of
-// the servers on offer only ZokoAnime is read here: its page ships the whole
-// player config in one obfuscated blob (see embed.go), while the MegaPlay
-// family hands back an AES-encrypted "enc" field whose key lives in a
-// third-party repository — the same shape of dependency that made AllAnime
-// unmaintainable. ZokoAnime was present on every title sampled, for every
-// audio track.
+// A server entry carries its embed URL as data-hash, which is plain base64.
+// ZokoAnime is read first: its page ships the whole player config in one
+// obfuscated blob (see embed.go), and it was present on every title sampled,
+// for every audio track. Its CDN is a single host that some ISPs drop (seen
+// 2026-10-15 from a Brazilian connection: no TCP answer while the rest of the
+// world reached it), so stream.go probes the playlist and falls back to the
+// MegaPlay family ("HD-1", …). That one hands back an AES-encrypted "enc" field
+// whose key the player's own script carries, and segments wrapped in a PNG
+// image that a local proxy unwraps (see megaplay.go and hlsproxy.go).
 //
 // Identity is carried in URLs so the source registry can route an anime back
 // here without extra state:
