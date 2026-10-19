@@ -297,6 +297,7 @@ func serveSegment(w http.ResponseWriter, r *http.Request, resp *http.Response) {
 		http.Error(w, "segment unwrap failed", http.StatusBadGateway)
 		return
 	}
+	skipped += skipToTSPacket(br)
 	w.Header().Set("Content-Type", "video/mp2t")
 	if resp.ContentLength >= skipped {
 		w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength-skipped, 10))
@@ -339,4 +340,37 @@ func skipPNGWrapper(br *bufio.Reader) (int64, error) {
 			return skipped, nil
 		}
 	}
+}
+
+// tsPacketSize is the MPEG-TS packet length; every packet starts with tsSync.
+const (
+	tsPacketSize = 188
+	tsSync       = 0x47
+)
+
+// skipToTSPacket drops the bytes before the first whole TS packet and reports
+// how many it dropped. Live MegaPlay segments open with a 182-byte packet (an
+// SDT short of its stuffing), so the 188-byte cadence only starts after it.
+// Read from a file ffmpeg recovers by seeking back, but inside HLS it cannot:
+// it logged "mpegts: Unable to seek back to the start", lost the first ~17s of
+// the episode and made that the start time. mpv rebases the video on it while
+// external subtitles keep their own clock, so every line came ~17s late (seen
+// 2026-10-19 on Black Clover EP 85). A segment already aligned, or too short
+// to tell, is left untouched.
+func skipToTSPacket(br *bufio.Reader) int64 {
+	head, _ := br.Peek(3 * tsPacketSize)
+	aligned := func(o int) bool {
+		return o+2*tsPacketSize < len(head) &&
+			head[o] == tsSync && head[o+tsPacketSize] == tsSync && head[o+2*tsPacketSize] == tsSync
+	}
+	if len(head) < 3*tsPacketSize || aligned(0) {
+		return 0
+	}
+	for o := 1; o < tsPacketSize; o++ {
+		if aligned(o) {
+			_, _ = br.Discard(o)
+			return int64(o)
+		}
+	}
+	return 0
 }

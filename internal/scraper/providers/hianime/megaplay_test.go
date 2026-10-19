@@ -79,6 +79,26 @@ func TestSkipPNGWrapper(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestSkipToTSPacket(t *testing.T) {
+	t.Parallel()
+	packets := bytes.Repeat(tsPayload, 2)
+
+	// Live segments open with a packet 6 bytes short; it is dropped.
+	short := append(append([]byte{0x47}, bytes.Repeat([]byte{0xff}, 181)...), packets...)
+	br := bufio.NewReader(bytes.NewReader(short))
+	assert.EqualValues(t, 182, skipToTSPacket(br))
+	rest, _ := io.ReadAll(br)
+	assert.Equal(t, packets, rest)
+
+	// Aligned and too-short segments pass through untouched.
+	for _, in := range [][]byte{packets, tsPayload} {
+		br = bufio.NewReader(bytes.NewReader(in))
+		assert.Zero(t, skipToTSPacket(br))
+		rest, _ = io.ReadAll(br)
+		assert.Equal(t, in, rest)
+	}
+}
+
 // TestGetEpisodeStreamURL_FallsBackToMegaPlay runs the case this file exists
 // for: the ZokoAnime CDN does not answer (a blocked host), so the episode is
 // served by MegaPlay through the local proxy, and the segment mpv reads is
