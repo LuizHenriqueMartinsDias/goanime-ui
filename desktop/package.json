@@ -1,0 +1,62 @@
+{
+  "name": "goanime-desktop",
+  "productName": "GoAnime",
+  "version": "1.0.0",
+  "description": "GoAnime como aplicativo de desktop",
+  "license": "MIT",
+  "homepage": "https://github.com/alvarorichard/Goanime",
+  "author": {
+    "name": "GoAnime",
+    "email": "goanime@users.noreply.github.com"
+  },
+  "desktopName": "goanime-desktop.desktop",
+  "main": "main.js",
+  "scripts": {
+    "build:server": "cd .. && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o desktop/bin/goanime-ui ./cmd/goanime-ui",
+    "start": "npm run build:server && electron .",
+    "dist": "npm run build:server && electron-builder --linux dir AppImage deb"
+  },
+  "build": {
+    "appId": "io.github.alvarorichard.goanime",
+    "productName": "GoAnime",
+    "executableName": "goanime-desktop",
+    "files": [
+      "main.js",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "AudioVideo",
+      "synopsis": "Buscar e assistir animes com o GoAnime",
+      "maintainer": "GoAnime",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "mpv"
+      ]
+    }
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0"
+  }
+}
