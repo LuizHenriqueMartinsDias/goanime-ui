@@ -19,6 +19,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/alvarorichard/GoAnime" alt="License"></a>
 </p>
 
+> [!NOTE]
+> This repository is derived from the
+> [original GoAnime](https://github.com/alvarorichard/GoAnime) and adds a
+> [web interface and desktop app](#web-interface). The releases, AUR package,
+> `go install` and `--update` described below come from the original project and
+> install only the terminal application.
+
 GoAnime is a terminal application for searching, streaming and downloading
 anime, movies and TV shows in English and Brazilian Portuguese. It searches
 several sources at once, plays the selected episode in
@@ -35,6 +42,7 @@ subtitles, and upscaling a video requires it.
 ## Contents
 
 - [Features](#features)
+- [Web interface](#web-interface)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Sources](#sources)
@@ -62,6 +70,71 @@ subtitles, and upscaling a video requires it.
 - Discord Rich Presence.
 - Anime4K upscaling in real time while you watch, or of video and image files.
 - Updates itself with `goanime --update`.
+
+## Web interface
+
+`goanime-ui` puts GoAnime in a graphical interface, in Portuguese, either in the
+browser or in its own window. Videos still open in mpv.
+
+- **Home:** resumes the last episode and lists what you are watching and your
+  favorites.
+- **Search:** searches AnimeFire and HiAnime, together or separately, with a
+  choice of quality (best, 1080p, 720p or 480p).
+- **Anime page:** lists the episodes, marks the ones you watched and points to
+  the next one.
+- **Progress:** saves where you stopped during playback and resumes the episode
+  from there.
+- **Subtitles:** the player in the sidebar switches tracks during an episode.
+  The video opens with your preferred language, and the other tracks appear in
+  the picker a few seconds after it starts.
+- **Downloads:** downloads one episode or a range, with a queue, cancellation, a
+  button to watch the file and a shortcut to the folder.
+
+The other sources, movies and TV shows, AniSkip, Discord Rich Presence and
+menu-driven upscaling remain exclusive to the terminal application.
+
+### Requirements
+
+- [Go](https://go.dev/dl/) 1.27.2 or later, to build.
+- [mpv](https://mpv.io/installation/) on your `PATH`, to watch.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) on your `PATH`, to download.
+- Node.js, only for the desktop app.
+
+Only Linux has been tested, and the desktop app packaging builds Linux packages
+only.
+
+### In the browser
+
+```bash
+git clone https://github.com/LuizHenriqueMartinsDias/goanime-ui.git
+cd goanime-ui
+go build -o goanime-ui ./cmd/goanime-ui
+./goanime-ui
+```
+
+Your browser opens at `http://127.0.0.1:7777`. Use `--port` to change the port
+and `--no-open` to keep the browser closed. The server listens only on this
+machine and rejects requests coming from other sites.
+
+### Desktop app
+
+```bash
+cd desktop
+npm install
+npm start        # builds the server and opens the app
+npm run dist     # builds the AppImage and .deb in dist/
+```
+
+The app starts the server on its own and stops it when the window closes. If a
+`goanime-ui` is already running on that port, the app uses it. The
+`GOANIME_PORT` variable changes the port.
+
+### Data
+
+Favorites, history and progress are stored in `~/.local/goanime/ui/state.json`,
+separate from the terminal application's history. Downloads go to
+`~/.local/goanime/downloads/anime/`.
+
 
 ## Installation
 
